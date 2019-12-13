@@ -1,0 +1,5 @@
+cupy-cuda101
+matplotlib
+numpy
+scikit-image
+scipy
