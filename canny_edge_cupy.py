@@ -30,9 +30,10 @@ def read_code(code_filename, params=None):
 
 
 # preload cuda kernel function (save time by compiling only once)
-nms_file = os.path.join(os.path.dirname(__file__), 'cu_suppress_non_max.cu')
-high_file = os.path.join(os.path.dirname(__file__), 'cu_high.cu')
-low_file = os.path.join(os.path.dirname(__file__), 'cu_hysteresis_low.cu')
+cuda_path = os.path.join(os.path.dirname(__file__), 'cuda')
+nms_file = os.path.join(cuda_path, 'cu_suppress_non_max.cu')
+high_file = os.path.join(cuda_path, 'cu_high.cu')
+low_file = os.path.join(cuda_path, 'cu_hysteresis_low.cu')
 nms_code = read_code(nms_file, params=None)
 nms_kernel = cp.RawKernel(nms_code, 'cu_suppress_non_max')
 HThread_code = read_code(high_file, params=None)
