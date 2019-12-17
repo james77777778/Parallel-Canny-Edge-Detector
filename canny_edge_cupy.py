@@ -7,6 +7,7 @@ import numpy as np
 import cupy as cp
 import cupyx as cpx
 import cupyx.scipy.ndimage
+from skimage.color import rgb2gray
 
 
 # stack function
@@ -44,11 +45,14 @@ LThread_kernel = cp.RawKernel(LThread_code, 'cu_hysteresis_low')
 
 # PARAMETERS
 # whether to plot
-is_plot = False
+is_plot = True
 # number of stacking image
 stack_num = 1
 # cameraman image
-cameraman_image = data.camera()/255.
+image1 = data.camera()
+image2 = rgb2gray(data.astronaut())
+cameraman_image = image1/255.
+print(cameraman_image.shape)
 # stack
 single_height, single_width = cameraman_image.shape
 padding_size = 7  # we have gaussian(7) & gradient(3)
@@ -170,15 +174,15 @@ final_image_list = []
 for edge_image in unstack_list:
     high_threshold = edge_image.max()*high_thres_ratio
     low_threshold = high_threshold*low_thres_ratio
-    final_image = cp.zeros((height, width))
+    final_image = cp.zeros((single_height, single_width))
     final_image = cp.asfortranarray(final_image, dtype=cp.float32)
-    strong_edge_pixel = cp.zeros((height, width))
+    strong_edge_pixel = cp.zeros((single_height, single_width))
     strong_edge_pixel = cp.asfortranarray(strong_edge_pixel, dtype=cp.float32)
     edge_image = cp.asfortranarray(edge_image, dtype=cp.float32)
     high_threshold = np.float32(cp.asnumpy(high_threshold))
     low_threshold = np.float32(cp.asnumpy(low_threshold))
     argsH = (final_image, edge_image, strong_edge_pixel, high_threshold,
-             height, width)
+             single_height, single_width)
     # high
     HThread_kernel((grid,), (block,), args=argsH)
     # low
@@ -186,7 +190,7 @@ for edge_image in unstack_list:
         (edge_image >= low_threshold) & (edge_image <= high_threshold))
     weak_edge_pixel = cp.asfortranarray(weak_edge_pixel, dtype=cp.float32)
     argsL = (final_image, edge_image, strong_edge_pixel, weak_edge_pixel,
-             low_threshold, height, width)
+             low_threshold, single_height, single_width)
     LThread_kernel((grid,), (block,), args=argsL)
     final_image_list.append(final_image)
 
