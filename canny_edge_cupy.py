@@ -52,7 +52,6 @@ stack_num = 1
 image1 = data.camera()
 image2 = rgb2gray(data.astronaut())
 cameraman_image = image1/255.
-print(cameraman_image.shape)
 # stack
 single_height, single_width = cameraman_image.shape
 padding_size = 7  # we have gaussian(7) & gradient(3)
@@ -192,13 +191,16 @@ for edge_image in unstack_list:
     argsL = (final_image, edge_image, strong_edge_pixel, weak_edge_pixel,
              low_threshold, single_height, single_width)
     LThread_kernel((grid,), (block,), args=argsL)
-    final_image_list.append(final_image)
+    final_image_list.append(cp.asnumpy(final_image))
+    time.sleep(2)
 
 t4 = time.perf_counter()-ts
 
 # Task 4 plot
 if is_plot:
-    plt.imshow(cp.asnumpy(final_image), cmap=plt.get_cmap('gray'))
+    padding = np.zeros((0, single_width))
+    final_image = stackImage(padding, final_image_list)
+    plt.imshow(final_image, cmap=plt.get_cmap('gray'))
     plt.axis('off')
     plt.title('Final image')
     plt.show()
