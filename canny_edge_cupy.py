@@ -170,17 +170,19 @@ for i in range(stack_num):
                    (i*(single_height+padding_size))+single_height, :])
 final_image_list = []
 
-for edge_image in unstack_list:
+pre_final_image_list = []
+
+for i,edge_image in enumerate(unstack_list):
     high_threshold = edge_image.max()*high_thres_ratio
     low_threshold = high_threshold*low_thres_ratio
-    final_image = cp.zeros((single_height, single_width))
-    final_image = cp.asfortranarray(final_image, dtype=cp.float32)
+    pre_final_image_list.append(cp.zeros((single_height, single_width)))
+    pre_final_image_list[i] = cp.asfortranarray(pre_final_image_list[i], dtype=cp.float32)
     strong_edge_pixel = cp.zeros((single_height, single_width))
     strong_edge_pixel = cp.asfortranarray(strong_edge_pixel, dtype=cp.float32)
     edge_image = cp.asfortranarray(edge_image, dtype=cp.float32)
     high_threshold = np.float32(cp.asnumpy(high_threshold))
     low_threshold = np.float32(cp.asnumpy(low_threshold))
-    argsH = (final_image, edge_image, strong_edge_pixel, high_threshold,
+    argsH = (pre_final_image_list[i], edge_image, strong_edge_pixel, high_threshold,
              single_height, single_width)
     # high
     HThread_kernel((grid,), (block,), args=argsH)
@@ -188,11 +190,11 @@ for edge_image in unstack_list:
     weak_edge_pixel = (
         (edge_image >= low_threshold) & (edge_image <= high_threshold))
     weak_edge_pixel = cp.asfortranarray(weak_edge_pixel, dtype=cp.float32)
-    argsL = (final_image, edge_image, strong_edge_pixel, weak_edge_pixel,
+    argsL = (pre_final_image_list[i], edge_image, strong_edge_pixel, weak_edge_pixel,
              low_threshold, single_height, single_width)
     LThread_kernel((grid,), (block,), args=argsL)
-    final_image_list.append(cp.asnumpy(final_image))
-    time.sleep(2)
+    final_image_list.append(cp.asnumpy(pre_final_image_list[i]))
+    #time.sleep(2)
 
 t4 = time.perf_counter()-ts
 
