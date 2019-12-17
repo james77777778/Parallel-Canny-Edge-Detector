@@ -1,8 +1,9 @@
 extern "C" __global__
-void cu_suppress_non_max(float* mag, float* deltaX, float* deltaY, float* nms, int parser_length, int offset)
+void cu_suppress_non_max(float* mag, float* deltaX, float* deltaY, float* nms,
+                         long parser_length, long offset)
 {
     const int SUPPRESSED = 0;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    long idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= 0 && idx < parser_length * offset)
     {
         float alpha;
@@ -10,14 +11,14 @@ void cu_suppress_non_max(float* mag, float* deltaX, float* deltaY, float* nms, i
         // put zero all boundaries of image
         // TOP edge line of the image
         if((idx >= 0) && (idx <offset))
-            nms[idx] = 0;
+            nms[idx] = SUPPRESSED;
         // BOTTOM edge line of image
         else if((idx >= (parser_length-1)*offset) && (idx < (offset * parser_length)))
-            nms[idx] = 0;
+            nms[idx] = SUPPRESSED;
         // LEFT & RIGHT edge line
         else if(((idx % offset)==0) || ((idx % offset)==(offset - 1)))
         {
-            nms[idx] = 0;
+            nms[idx] = SUPPRESSED;
         }
         else // not the boundaries
         {
