@@ -10,6 +10,7 @@ import cupyx as cpx
 import cupyx.scipy.ndimage
 import matplotlib.pyplot as plt
 from PIL import Image
+import time
 
 
 # utils for read cu files
@@ -63,6 +64,21 @@ class CannyDetectorCuda():
         # # now image height, width
         # self.now_height = 0
         # self.now_width = 0
+        self.t1 = 0
+        self.t2 = 0
+        self.t3 = 0
+        self.t4 = 0
+    
+    def show_time_result(self):
+        image_list_len = len(self.image_list_)
+        print('Canny Detector Cuda Version (img len:', image_list_len, ')')
+        print('avg t1: ', self.t1/image_list_len)
+        print('avg t2: ', self.t2/image_list_len)
+        print('avg t3: ', self.t3/image_list_len)
+        print('avg t4: ', self.t4/image_list_len)
+    
+    def get_time_result(self):
+        return self.t1, self.t2, self.t3, self.t4
 
     def load_image(self, image_list):
         if type(image_list) is not list:
@@ -79,12 +95,15 @@ class CannyDetectorCuda():
 
     # task 1
     def gaussian_blur(self, image):
+        ts = time.perf_counter()
         blurred_image = cpx.scipy.ndimage.convolve(image, self.gaussian_filter)
         cp.cuda.Stream.null.synchronize()
+        self.t1 += time.perf_counter()-ts
         return blurred_image.copy()
 
     # task 2
     def gradient(self, image):
+        ts = time.perf_counter()
         horizontal_edge = cpx.scipy.ndimage.convolve(image, self.xaxis_filter)
         vertical_edge = cpx.scipy.ndimage.convolve(image, self.yaxis_filter)
         gradient_image = cp.zeros_like(horizontal_edge)
@@ -92,11 +111,13 @@ class CannyDetectorCuda():
             cp.power(horizontal_edge, 2) + cp.power(vertical_edge, 2),
             out=gradient_image)
         cp.cuda.Stream.null.synchronize()
+        self.t2 += time.perf_counter()-ts
         return (gradient_image.copy(), horizontal_edge.copy(),
                 vertical_edge.copy())
 
     # task 3
     def nms(self, in_gradient_image, in_horizontal_edge, in_vertical_edge):
+        ts = time.perf_counter()
         height, width = in_gradient_image.shape
         block = 128
         grid = (height*width+block-1)//block
@@ -114,10 +135,12 @@ class CannyDetectorCuda():
                 edge_image, width, height)
         self.nms_kernel((grid,), (block,), args=args)
         cp.cuda.Stream.null.synchronize()
+        self.t3 += time.perf_counter()-ts
         return edge_image.copy()
 
     # task 4
     def double_threshold(self, in_edge_image):
+        ts = time.perf_counter()
         high_threshold = in_edge_image.max()*self.high_thres_ratio
         low_threshold = high_threshold*self.low_thres_ratio
         height, width = in_edge_image.shape
@@ -145,6 +168,7 @@ class CannyDetectorCuda():
                  low_threshold, width, height)
         self.LThread_kernel((grid,), (block,), args=argsL)
         cp.cuda.Stream.null.synchronize()
+        self.t4 += time.perf_counter()-ts
         return final_image.copy()
 
     # run all algorithm: task 1~4
@@ -164,6 +188,8 @@ class CannyDetectorCuda():
             # move from gpu to cpu to self.result_image_list_
             self.result_image_list_.append(cp.asnumpy(final_image))
             cp.cuda.Stream.null.synchronize()
+        
+        self.show_time_result()
 
 
 class CannyDetectorSerial():
@@ -196,6 +222,22 @@ class CannyDetectorSerial():
         # # now image height, width
         # self.now_height = 0
         # self.now_width = 0
+        # time list
+        self.t1 = 0
+        self.t2 = 0
+        self.t3 = 0
+        self.t4 = 0
+    
+    def show_time_result(self):
+        image_list_len = len(self.image_list_)
+        print('Canny Detector Serial Version (img len:', image_list_len, ')')
+        print('avg t1: ', self.t1/image_list_len)
+        print('avg t2: ', self.t2/image_list_len)
+        print('avg t3: ', self.t3/image_list_len)
+        print('avg t4: ', self.t4/image_list_len)
+    
+    def get_time_result(self):
+        return self.t1, self.t2, self.t3, self.t4
 
     def load_image(self, image_list):
         if type(image_list) is not list:
@@ -212,19 +254,24 @@ class CannyDetectorSerial():
 
     # task 1
     def gaussian_blur(self, image):
+        ts = time.perf_counter()
         blurred_image = scipy.ndimage.convolve(image, self.gaussian_filter)
+        self.t1 += time.perf_counter()-ts
         return blurred_image.copy()
 
     # task 2
     def gradient(self, image):
+        ts = time.perf_counter()
         horizontal_edge = scipy.ndimage.convolve(image, self.xaxis_filter)
         vertical_edge = scipy.ndimage.convolve(image, self.yaxis_filter)
         gradient_image = np.sqrt(horizontal_edge**2 + vertical_edge**2)
+        self.t2 += time.perf_counter()-ts
         return (gradient_image.copy(), horizontal_edge.copy(),
                 vertical_edge.copy())
 
     # task 3
     def nms(self, in_gradient_image, in_horizontal_edge, in_vertical_edge):
+        ts = time.perf_counter()
         height, width = in_gradient_image.shape
         edge_image = np.zeros((height, width))
         # put zero all boundaries of image
@@ -282,10 +329,12 @@ class CannyDetectorSerial():
                     edge_image[x, y] = 0.0
                 else:
                     edge_image[x, y] = mag[x, y]
+        self.t3 += time.perf_counter()-ts
         return edge_image.copy()
 
     # task 4
     def double_threshold(self, in_edge_image):
+        ts = time.perf_counter()
         high_threshold = in_edge_image.max()*self.high_thres_ratio
         low_threshold = high_threshold*self.low_thres_ratio
         height, width = in_edge_image.shape
@@ -318,6 +367,7 @@ class CannyDetectorSerial():
                    (strong_edge_pixel[south_west] > 0) or
                    (strong_edge_pixel[south_east] > 0)):
                     final_image[x][y] = 1  # classify the pixel as an edge
+        self.t4 += time.perf_counter()-ts
         return final_image.copy()
 
     # run all algorithm: task 1~4
@@ -337,6 +387,8 @@ class CannyDetectorSerial():
             # move from gpu to cpu to self.result_image_list_
             self.result_image_list_.append(final_image)
 
+        self.show_time_result()
+
 
 # test code
 if __name__ == '__main__':
@@ -350,11 +402,11 @@ if __name__ == '__main__':
         image_list.append(cp.asarray(data.camera()/255.))
         image_list.append(cp.asarray(rgb2gray(data.astronaut())))
     # init canny
-    canny = CannyDetectorCuda()
-    canny.load_image(image_list)
-    canny.set_threshold_ratio(0.1, 0.2)
-    canny.run_canny_detector()
-    results_list = canny.result_image_list_
+    canny_cuda = CannyDetectorCuda()
+    canny_cuda.load_image(image_list)
+    canny_cuda.set_threshold_ratio(0.1, 0.2)
+    canny_cuda.run_canny_detector()
+    results_list = canny_cuda.result_image_list_
     for i, image in enumerate(results_list):
         plt.imshow(image, cmap=plt.get_cmap('gray'))
         plt.axis('off')
@@ -370,11 +422,11 @@ if __name__ == '__main__':
         image_list.append(data.camera()/255.)
         image_list.append(rgb2gray(data.astronaut()))
     # init canny
-    canny = CannyDetectorSerial()
-    canny.load_image(image_list)
-    canny.set_threshold_ratio(0.1, 0.2)
-    canny.run_canny_detector()
-    results_list = canny.result_image_list_
+    canny_serial = CannyDetectorSerial()
+    canny_serial.load_image(image_list)
+    canny_serial.set_threshold_ratio(0.1, 0.2)
+    canny_serial.run_canny_detector()
+    results_list = canny_serial.result_image_list_
     for i, image in enumerate(results_list):
         plt.imshow(image, cmap=plt.get_cmap('gray'))
         plt.axis('off')
@@ -383,3 +435,13 @@ if __name__ == '__main__':
         final_image = image.astype(np.uint8)
         im = Image.fromarray(np.uint8(final_image*255), 'L')
         im.save(os.path.join(save_path, 'final_serial_'+str(i)+'.png'))
+
+    # speedUp
+    print('Avg Speed Up')
+    s_t1, s_t2, s_t3, s_t4 = canny_serial.get_time_result()
+    c_t1, c_t2, c_t3, c_t4 = canny_cuda.get_time_result()
+    print('avg t1: ', s_t1/c_t1)
+    print('avg t2: ', s_t2/c_t2)
+    print('avg t3: ', s_t3/c_t3)
+    print('avg t4: ', s_t4/c_t4)
+
