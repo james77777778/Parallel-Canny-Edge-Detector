@@ -70,6 +70,9 @@ class CannyDetectorCuda():
         else:
             self.image_list_ = image_list
 
+    def clear_image(self):
+        self.image_list_ = []
+
     def set_threshold_ratio(self, low_thres_ratio=0.1, high_thres_ratio=0.2):
         self.low_thres_ratio = low_thres_ratio
         self.high_thres_ratio = high_thres_ratio
@@ -84,7 +87,10 @@ class CannyDetectorCuda():
     def gradient(self, image):
         horizontal_edge = cpx.scipy.ndimage.convolve(image, self.xaxis_filter)
         vertical_edge = cpx.scipy.ndimage.convolve(image, self.yaxis_filter)
-        gradient_image = cp.sqrt(horizontal_edge**2 + vertical_edge**2)
+        gradient_image = cp.zeros_like(horizontal_edge)
+        cp.sqrt(
+            cp.power(horizontal_edge, 2) + cp.power(vertical_edge, 2),
+            out=gradient_image)
         cp.cuda.Stream.null.synchronize()
         return (gradient_image.copy(), horizontal_edge.copy(),
                 vertical_edge.copy())
@@ -94,14 +100,18 @@ class CannyDetectorCuda():
         height, width = in_gradient_image.shape
         block = 128
         grid = (height*width+block-1)//block
-        gradient_image = cp.asfortranarray(in_gradient_image, dtype=cp.float32)
-        horizontal = cp.asfortranarray(in_horizontal_edge, dtype=cp.float32)
-        vertical = cp.asfortranarray(in_vertical_edge, dtype=cp.float32)
+        in_gradient_image = cp.asfortranarray(in_gradient_image,
+                                              dtype=cp.float32)
+        in_horizontal_edge = cp.asfortranarray(in_horizontal_edge,
+                                               dtype=cp.float32)
+        in_vertical_edge = cp.asfortranarray(in_vertical_edge,
+                                             dtype=cp.float32)
         edge_image = cp.zeros((height, width))
         edge_image = cp.asfortranarray(edge_image, dtype=cp.float32)
-        h = np.int32(cp.asnumpy(height))
-        w = np.int32(cp.asnumpy(width))
-        args = (gradient_image, horizontal, vertical, edge_image, h, w)
+        height = np.int32(cp.asnumpy(height))
+        width = np.int32(cp.asnumpy(width))
+        args = (in_gradient_image, in_horizontal_edge, in_vertical_edge,
+                edge_image, width, height)
         self.nms_kernel((grid,), (block,), args=args)
         cp.cuda.Stream.null.synchronize()
         return edge_image.copy()
@@ -124,7 +134,7 @@ class CannyDetectorCuda():
         height = np.int32(cp.asnumpy(height))
         width = np.int32(cp.asnumpy(width))
         argsH = (final_image, edge_image, strong_edge_pixel, high_threshold,
-                 height, width)
+                 width, height)
         # high
         self.HThread_kernel((grid,), (block,), args=argsH)
         # low
@@ -132,7 +142,7 @@ class CannyDetectorCuda():
             (edge_image >= low_threshold) & (edge_image <= high_threshold))
         weak_edge_pixel = cp.asfortranarray(weak_edge_pixel, dtype=cp.float32)
         argsL = (final_image, edge_image, strong_edge_pixel, weak_edge_pixel,
-                 low_threshold, height, width)
+                 low_threshold, width, height)
         self.LThread_kernel((grid,), (block,), args=argsL)
         cp.cuda.Stream.null.synchronize()
         return final_image.copy()
@@ -192,6 +202,9 @@ class CannyDetectorSerial():
             self.image_list_.append(image_list)
         else:
             self.image_list_ = image_list
+
+    def clear_image(self):
+        self.image_list_ = []
 
     def set_threshold_ratio(self, low_thres_ratio=0.1, high_thres_ratio=0.2):
         self.low_thres_ratio = low_thres_ratio
@@ -333,8 +346,9 @@ if __name__ == '__main__':
     # cuda version
     # load image from skimage.data and move from cpu to gpu
     image_list = []
-    image_list.append(cp.asarray(data.camera()/255.))
-    image_list.append(cp.asarray(rgb2gray(data.astronaut())))
+    for _ in range(1):
+        image_list.append(cp.asarray(data.camera()/255.))
+        image_list.append(cp.asarray(rgb2gray(data.astronaut())))
     # init canny
     canny = CannyDetectorCuda()
     canny.load_image(image_list)
@@ -352,8 +366,9 @@ if __name__ == '__main__':
     # serial version
     # load image from skimage.data and move from cpu to gpu
     image_list = []
-    image_list.append(data.camera()/255.)
-    image_list.append(rgb2gray(data.astronaut()))
+    for _ in range(1):
+        image_list.append(data.camera()/255.)
+        image_list.append(rgb2gray(data.astronaut()))
     # init canny
     canny = CannyDetectorSerial()
     canny.load_image(image_list)
