@@ -64,10 +64,10 @@ class CannyDetectorCuda():
         # # now image height, width
         # self.now_height = 0
         # self.now_width = 0
-        self.t1 = 0
-        self.t2 = 0
-        self.t3 = 0
-        self.t4 = 0
+        self.t1 = []
+        self.t2 = []
+        self.t3 = []
+        self.t4 = []
         self.total_time = []
         self.data_transfer = []
     
@@ -101,7 +101,7 @@ class CannyDetectorCuda():
         ts = time.perf_counter()
         blurred_image = cpx.scipy.ndimage.convolve(image, self.gaussian_filter)
         cp.cuda.Stream.null.synchronize()
-        self.t1 += time.perf_counter()-ts
+        self.t1.append(time.perf_counter()-ts)
         return blurred_image.copy()
 
     # task 2
@@ -114,7 +114,7 @@ class CannyDetectorCuda():
             cp.power(horizontal_edge, 2) + cp.power(vertical_edge, 2),
             out=gradient_image)
         cp.cuda.Stream.null.synchronize()
-        self.t2 += time.perf_counter()-ts
+        self.t2.append(time.perf_counter()-ts)
         return (gradient_image.copy(), horizontal_edge.copy(),
                 vertical_edge.copy())
 
@@ -138,7 +138,7 @@ class CannyDetectorCuda():
                 edge_image, width, height)
         self.nms_kernel((grid,), (block,), args=args)
         cp.cuda.Stream.null.synchronize()
-        self.t3 += time.perf_counter()-ts
+        self.t3.append(time.perf_counter()-ts)
         return edge_image.copy()
 
     # task 4
@@ -171,7 +171,7 @@ class CannyDetectorCuda():
                  low_threshold, width, height)
         self.LThread_kernel((grid,), (block,), args=argsL)
         cp.cuda.Stream.null.synchronize()
-        self.t4 += time.perf_counter()-ts
+        self.t4.append(time.perf_counter()-ts)
         return final_image.copy()
 
     # run all algorithm: task 1~4
@@ -184,19 +184,20 @@ class CannyDetectorCuda():
         self.result_image_list_ = []
         # run all tasks
         for image in self.image_list_:
-            ts = time.perf_counter()
+            # run algorithm
+            tt = time.perf_counter()
             blurred = self.gaussian_blur(image)
             gradient, horizontal, vertical = self.gradient(blurred)
             nms_edge = self.nms(gradient, horizontal, vertical)
             final_image = self.double_threshold(nms_edge)
-            ts = self.total_time.append(time.perf_counter()-ts)
+
             # move from gpu to cpu to self.result_image_list_
             ts = time.perf_counter()
             self.result_image_list_.append(cp.asnumpy(final_image))
             cp.cuda.Stream.null.synchronize()
             self.data_transfer.append(time.perf_counter()-ts)
-        
-        self.show_time_result()
+
+            self.total_time.append(time.perf_counter()-tt)
 
 
 class CannyDetectorSerial():
@@ -230,10 +231,11 @@ class CannyDetectorSerial():
         # self.now_height = 0
         # self.now_width = 0
         # time list
-        self.t1 = 0
-        self.t2 = 0
-        self.t3 = 0
-        self.t4 = 0
+        self.t1 = []
+        self.t2 = []
+        self.t3 = []
+        self.t4 = []
+        self.total_time = []
     
     def show_time_result(self):
         image_list_len = len(self.image_list_)
@@ -264,7 +266,7 @@ class CannyDetectorSerial():
     def gaussian_blur(self, image):
         ts = time.perf_counter()
         blurred_image = scipy.ndimage.convolve(image, self.gaussian_filter)
-        self.t1 += time.perf_counter()-ts
+        self.t1.append(time.perf_counter()-ts)
         return blurred_image.copy()
 
     # task 2
@@ -273,7 +275,7 @@ class CannyDetectorSerial():
         horizontal_edge = scipy.ndimage.convolve(image, self.xaxis_filter)
         vertical_edge = scipy.ndimage.convolve(image, self.yaxis_filter)
         gradient_image = np.sqrt(horizontal_edge**2 + vertical_edge**2)
-        self.t2 += time.perf_counter()-ts
+        self.t2.append(time.perf_counter()-ts)
         return (gradient_image.copy(), horizontal_edge.copy(),
                 vertical_edge.copy())
 
@@ -337,7 +339,7 @@ class CannyDetectorSerial():
                     edge_image[x, y] = 0.0
                 else:
                     edge_image[x, y] = mag[x, y]
-        self.t3 += time.perf_counter()-ts
+        self.t3.append(time.perf_counter()-ts)
         return edge_image.copy()
 
     # task 4
@@ -375,7 +377,7 @@ class CannyDetectorSerial():
                    (strong_edge_pixel[south_west] > 0) or
                    (strong_edge_pixel[south_east] > 0)):
                     final_image[x][y] = 1  # classify the pixel as an edge
-        self.t4 += time.perf_counter()-ts
+        self.t4.append(time.perf_counter()-ts)
         return final_image.copy()
 
     # run all algorithm: task 1~4
@@ -388,18 +390,21 @@ class CannyDetectorSerial():
         self.result_image_list_ = []
         # run all tasks
         for image in self.image_list_:
+            ts = time.perf_counter()
             blurred = self.gaussian_blur(image)
             gradient, horizontal, vertical = self.gradient(blurred)
             nms_edge = self.nms(gradient, horizontal, vertical)
             final_image = self.double_threshold(nms_edge)
+            self.total_time.append(time.perf_counter()-ts)
             # move from gpu to cpu to self.result_image_list_
             self.result_image_list_.append(final_image)
-        self.show_time_result()
 
-def serial_load_rawimag(level='Easy'):
+data_set = 'Easy'
+def serial_load_rawimag(level=data_set):
     imgPath = './picture/'+str(level)+'/'
     imgname = os.listdir(imgPath)
     image_list=[]
+    imgname.sort()
     for img in imgname:
         print(img)
         img = Image.open(os.path.join(imgPath,img))
@@ -408,10 +413,11 @@ def serial_load_rawimag(level='Easy'):
         image_list.append(rgb2gray(ima))
     return(image_list)
 
-def cuda_load_rawimag(level='Easy'):
+def cuda_load_rawimag(level=data_set):
     imgPath = './picture/'+str(level)+'/'
     imgname = os.listdir(imgPath)
     image_list=[]
+    imgname.sort()
     for img in imgname:
         print(img)
         img = Image.open(os.path.join(imgPath,img))
@@ -427,19 +433,17 @@ if __name__ == '__main__':
     # make dir to save result images
     save_path = 'results'
     os.makedirs(save_path, exist_ok=True)
+
     # cuda version
     # load image from skimage.data and move from cpu to gpu
     image_list = []
-    #for _ in range(1):
-    #    image_list.append(cp.asarray(data.camera()/255.))
-    #    image_list.append(cp.asarray(rgb2gray(data.astronaut())))
     image_list = cuda_load_rawimag()
-    #print(image_list[0])
     # init canny
     canny_cuda = CannyDetectorCuda()
     canny_cuda.load_image(image_list)
     canny_cuda.set_threshold_ratio(0.1, 0.2)
     canny_cuda.run_canny_detector()
+    canny_cuda.run_canny_detector() # get second time data
     cuda_results_list = canny_cuda.result_image_list_
     for i, image in enumerate(cuda_results_list):
         plt.imshow(image, cmap=plt.get_cmap('gray'))
@@ -449,12 +453,8 @@ if __name__ == '__main__':
         final_image = image.astype(np.uint8)
         im = Image.fromarray(np.uint8(final_image*255), 'L')
         im.save(os.path.join(save_path, 'final_cuda_'+str(i)+'.png'))
+    
     # serial version
-    # load image from skimage.data and move from cpu to gpu
-    #image_list = []
-    #for _ in range(1):
-    #    image_list.append(data.camera()/255.)
-    #    image_list.append(rgb2gray(data.astronaut()))
     image_list = serial_load_rawimag()
     # init canny
     canny_serial = CannyDetectorSerial()
@@ -470,6 +470,8 @@ if __name__ == '__main__':
         final_image = image.astype(np.uint8)
         im = Image.fromarray(np.uint8(final_image*255), 'L')
         im.save(os.path.join(save_path, 'final_serial_'+str(i)+'.png'))
+    
+    
 
     # SpeedUp
     '''
@@ -484,13 +486,15 @@ if __name__ == '__main__':
     '''
 
     # Errors
+    '''
     print('Errors')
     for i in range(len(cuda_results_list)):
         e = np.average(np.absolute(serial_results_list[i]-cuda_results_list[i]))
         print('img',i,':',e)
-    
+    '''
     
     # Data Transfer Time
+    '''
     print('Data Transfer Time')
     for i in range(len(canny_cuda.data_transfer)):
        print('img',i,':',canny_cuda.data_transfer[i])
@@ -498,6 +502,44 @@ if __name__ == '__main__':
     print('Data Transfer Rate')
     for i in range(len(canny_cuda.data_transfer)):
        print('img',i,':',canny_cuda.data_transfer[i]/(canny_cuda.data_transfer[i]+canny_cuda.total_time[i]))
-        
+    '''
+    # 5 picture
+    print('Cuda')
+    print('t1')
+    for j in range(5):
+        print(canny_cuda.t1[j+5])
+    print('t2')
+    for j in range(5):
+        print(canny_cuda.t2[j+5])
+    print('t3')
+    for j in range(5):
+        print(canny_cuda.t3[j+5])
+    print('t4')
+    for j in range(5):
+        print(canny_cuda.t4[j+5])
+    print('data transfer')
+    for j in range(5):
+        print(canny_cuda.data_transfer[j+5])
+    print('tall')
+    for j in range(5):
+        print(canny_cuda.total_time[j+5])
+    print('')
 
-
+    print('Serial')
+    print('t1')
+    for j in canny_serial.t1:
+        print(j)
+    print('t2')
+    for j in canny_serial.t2:
+        print(j)
+    print('t3')
+    for j in canny_serial.t3:
+        print(j)
+    print('t4')
+    for j in canny_serial.t4:
+        print(j)
+    print('tall')
+    for j in canny_serial.total_time:
+        print(j)
+    print('')
+    
