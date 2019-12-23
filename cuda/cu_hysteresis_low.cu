@@ -1,11 +1,11 @@
 extern "C" __global__
 void cu_hysteresis_low(float* final_img, float* edge_img, float* strong_edge_mask,
-                       float* weak_edge_mask, float t_low, int img_height, int img_width)
+                       float* weak_edge_mask, float t_low, unsigned int img_height, unsigned int img_width)
 {
     int n, s, e, w;
     int nw, ne, sw, se;
 
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (weak_edge_mask[idx] > 0)
     {
         n = idx - img_width;

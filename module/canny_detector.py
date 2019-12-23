@@ -29,11 +29,14 @@ class CannyDetectorCuda():
         high_file = os.path.join(cuda_path, 'cu_high.cu')
         low_file = os.path.join(cuda_path, 'cu_hysteresis_low.cu')
         nms_code = read_code(nms_file, params=None)
-        self.nms_kernel = cp.RawKernel(nms_code, 'cu_suppress_non_max')
+        self.nms_kernel = cp.RawKernel(
+            nms_code, backend='nvcc', name='cu_suppress_non_max')
         HThread_code = read_code(high_file, params=None)
-        self.HThread_kernel = cp.RawKernel(HThread_code, 'cu_high')
+        self.HThread_kernel = cp.RawKernel(
+            HThread_code, backend='nvcc', name='cu_high')
         LThread_code = read_code(low_file, params=None)
-        self.LThread_kernel = cp.RawKernel(LThread_code, 'cu_hysteresis_low')
+        self.LThread_kernel = cp.RawKernel(
+            LThread_code, backend='nvcc', name='cu_hysteresis_low')
         # pre-defined gaussian filter
         self.gaussian_filter = cp.array([
             [0.02040638, 0.0204074, 0.02040845, 0.02040644, 0.02040845,
@@ -68,6 +71,7 @@ class CannyDetectorCuda():
         self.t4 = []
         self.total_time = []
         self.data_transfer = []
+        cp.memoize(True)
 
     def show_time_result(self):
         image_list_len = len(self.image_list_)
@@ -99,29 +103,27 @@ class CannyDetectorCuda():
     def gaussian_blur(self, image):
         ts = time.perf_counter()
         blurred_image = cpx.scipy.ndimage.convolve(image, self.gaussian_filter)
-        cp.cuda.Stream.null.synchronize()
+        # cp.cuda.Stream.null.synchronize()
         self.t1.append(time.perf_counter()-ts)
-        return blurred_image.copy()
+        return blurred_image
 
     # task 2
     def gradient(self, image):
         ts = time.perf_counter()
         horizontal_edge = cpx.scipy.ndimage.convolve(image, self.xaxis_filter)
         vertical_edge = cpx.scipy.ndimage.convolve(image, self.yaxis_filter)
-        gradient_image = cp.zeros_like(horizontal_edge)
-        cp.sqrt(
-            cp.power(horizontal_edge, 2) + cp.power(vertical_edge, 2),
-            out=gradient_image)
-        cp.cuda.Stream.null.synchronize()
+        gradient_image = cp.sqrt(
+            cp.power(horizontal_edge, 2) + cp.power(vertical_edge, 2))
+        # cp.cuda.Stream.null.synchronize()
         self.t2.append(time.perf_counter()-ts)
-        return (gradient_image.copy(), horizontal_edge.copy(),
-                vertical_edge.copy())
+        return (gradient_image, horizontal_edge,
+                vertical_edge)
 
     # task 3
     def nms(self, in_gradient_image, in_horizontal_edge, in_vertical_edge):
         ts = time.perf_counter()
         height, width = in_gradient_image.shape
-        block = 128
+        block = 512
         grid = (height*width+block-1)//block
         in_gradient_image = cp.asfortranarray(in_gradient_image,
                                               dtype=cp.float32)
@@ -136,9 +138,9 @@ class CannyDetectorCuda():
         args = (in_gradient_image, in_horizontal_edge, in_vertical_edge,
                 edge_image, width, height)
         self.nms_kernel((grid,), (block,), args=args)
-        cp.cuda.Stream.null.synchronize()
+        # cp.cuda.Stream.null.synchronize()
         self.t3.append(time.perf_counter()-ts)
-        return edge_image.copy()
+        return edge_image
 
     # task 4
     def double_threshold(self, in_edge_image):
@@ -146,7 +148,7 @@ class CannyDetectorCuda():
         high_threshold = in_edge_image.max()*self.high_thres_ratio
         low_threshold = high_threshold*self.low_thres_ratio
         height, width = in_edge_image.shape
-        block = 128
+        block = 512
         grid = (height*width+block-1)//block
         final_image = cp.zeros((height, width))
         final_image = cp.asfortranarray(final_image, dtype=cp.float32)
@@ -156,8 +158,6 @@ class CannyDetectorCuda():
         edge_image = cp.asfortranarray(in_edge_image, dtype=cp.float32)
         high_threshold = np.float32(cp.asnumpy(high_threshold))
         low_threshold = np.float32(cp.asnumpy(low_threshold))
-        height = np.int32(cp.asnumpy(height))
-        width = np.int32(cp.asnumpy(width))
         argsH = (final_image, edge_image, strong_edge_pixel, high_threshold,
                  width, height)
         # high
@@ -169,9 +169,9 @@ class CannyDetectorCuda():
         argsL = (final_image, edge_image, strong_edge_pixel, weak_edge_pixel,
                  low_threshold, width, height)
         self.LThread_kernel((grid,), (block,), args=argsL)
-        cp.cuda.Stream.null.synchronize()
+        # cp.cuda.Stream.null.synchronize()
         self.t4.append(time.perf_counter()-ts)
-        return final_image.copy()
+        return final_image
 
     # run all algorithm: task 1~4
     # need to preload image_list, preset threshold ratio

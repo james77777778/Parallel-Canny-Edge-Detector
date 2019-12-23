@@ -23,6 +23,8 @@ canny_cuda.load_image(image_list)
 canny_cuda.set_threshold_ratio(0.1, 0.2)
 canny_cuda.run_canny_detector()  # warmup
 canny_cuda.run_canny_detector()  # get second time data
+canny_cuda.run_canny_detector()  # get second time data
+canny_cuda.run_canny_detector()  # get second time data
 cuda_results_list = canny_cuda.result_image_list_
 for i, image in enumerate(cuda_results_list):
     plt.imshow(image, cmap=plt.get_cmap('gray'))
@@ -49,13 +51,15 @@ for i, image in enumerate(cuda_results_list):
 # opencv version
 image_list = serial_load_rawimag('Easy')
 image_list = [np.uint8(image*255) for image in image_list]
-image_list = image_list*10
+# image_list = image_list*10
+cv2.setNumThreads(0)
+# cv2.setUseOptimized(False)
 opencv_results_list = []
 opencv_tall = []
 for image in image_list:
     t = time.perf_counter()
     blur_gray = cv2.GaussianBlur(image, (7, 7), 0)
-    edges = cv2.Canny(blur_gray, 40, 80, apertureSize=3, L2gradient=True)
+    edges = cv2.Canny(blur_gray, 0, 50, apertureSize=3, L2gradient=True)
     opencv_results_list.append(edges)
     opencv_tall.append(time.perf_counter() - t)
 
@@ -68,24 +72,25 @@ for i, image in enumerate(opencv_results_list):
 
 # 5 picture
 print('Cuda')
+offset = 15
 print('t1')
 for j in range(5):
-    print(canny_cuda.t1[j+5])
+    print(canny_cuda.t1[j+offset])
 print('t2')
 for j in range(5):
-    print(canny_cuda.t2[j+5])
+    print(canny_cuda.t2[j+offset])
 print('t3')
 for j in range(5):
-    print(canny_cuda.t3[j+5])
+    print(canny_cuda.t3[j+offset])
 print('t4')
 for j in range(5):
-    print(canny_cuda.t4[j+5])
+    print(canny_cuda.t4[j+offset])
 print('data transfer')
 for j in range(5):
-    print(canny_cuda.data_transfer[j+5])
+    print(canny_cuda.data_transfer[j+offset])
 print('tall')
 for j in range(5):
-    print(canny_cuda.total_time[j+5])
+    print(canny_cuda.total_time[j+offset]-canny_cuda.data_transfer[j+offset])
 print('')
 
 # print('Serial')
