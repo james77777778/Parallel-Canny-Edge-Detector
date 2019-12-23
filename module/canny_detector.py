@@ -24,7 +24,7 @@ def read_code(code_filename, params=None):
 class CannyDetectorCuda():
     def __init__(self):
         # preload cuda kernel function (save time by compiling only once)
-        cuda_path = os.path.join(os.path.dirname(__file__), 'cuda')
+        cuda_path = os.path.join(os.path.dirname(__file__), '..', 'cuda')
         nms_file = os.path.join(cuda_path, 'cu_suppress_non_max.cu')
         high_file = os.path.join(cuda_path, 'cu_high.cu')
         low_file = os.path.join(cuda_path, 'cu_hysteresis_low.cu')
