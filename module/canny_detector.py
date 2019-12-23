@@ -1,16 +1,14 @@
 import os
 import itertools
-from skimage import data
-from skimage.color import rgb2gray
 import numpy as np
 import scipy
 import scipy.ndimage
 import cupy as cp
 import cupyx as cpx
 import cupyx.scipy.ndimage
-import matplotlib.pyplot as plt
-from PIL import Image
 import time
+
+from module.util import serial_load_rawimag, cuda_load_rawimag
 
 
 # utils for read cu files
@@ -70,7 +68,7 @@ class CannyDetectorCuda():
         self.t4 = []
         self.total_time = []
         self.data_transfer = []
-    
+
     def show_time_result(self):
         image_list_len = len(self.image_list_)
         print('Canny Detector Cuda Version (img len:', image_list_len, ')')
@@ -79,9 +77,10 @@ class CannyDetectorCuda():
         print('avg t3: ', self.t3/image_list_len)
         print('avg t4: ', self.t4/image_list_len)
         print('avg total:\t', (self.t1+self.t2+self.t3+self.t4)/image_list_len)
-    
+
     def get_time_result(self):
-        return self.t1, self.t2, self.t3, self.t4, self.t1+self.t2+self.t3+self.t4
+        return (self.t1, self.t2, self.t3, self.t4,
+                self.t1+self.t2+self.t3+self.t4)
 
     def load_image(self, image_list):
         if type(image_list) is not list:
@@ -236,7 +235,7 @@ class CannyDetectorSerial():
         self.t3 = []
         self.t4 = []
         self.total_time = []
-    
+
     def show_time_result(self):
         image_list_len = len(self.image_list_)
         print('Canny Detector Serial Version (img len:', image_list_len, ')')
@@ -245,9 +244,10 @@ class CannyDetectorSerial():
         print('avg t3:\t', self.t3/image_list_len)
         print('avg t4:\t', self.t4/image_list_len)
         print('avg total:\t', (self.t1+self.t2+self.t3+self.t4)/image_list_len)
-    
+
     def get_time_result(self):
-        return self.t1, self.t2, self.t3, self.t4, self.t1+self.t2+self.t3+self.t4
+        return (self.t1, self.t2, self.t3, self.t4,
+                self.t1+self.t2+self.t3+self.t4)
 
     def load_image(self, image_list):
         if type(image_list) is not list:
@@ -399,110 +399,26 @@ class CannyDetectorSerial():
             # move from gpu to cpu to self.result_image_list_
             self.result_image_list_.append(final_image)
 
-data_set = 'Easy'
-def serial_load_rawimag(level=data_set):
-    imgPath = './picture/'+str(level)+'/'
-    imgname = os.listdir(imgPath)
-    image_list=[]
-    imgname.sort()
-    for img in imgname:
-        print(img)
-        img = Image.open(os.path.join(imgPath,img))
-        img.load()
-        ima = np.asarray(img, dtype="int32")
-        image_list.append(rgb2gray(ima))
-    return(image_list)
-
-def cuda_load_rawimag(level=data_set):
-    imgPath = './picture/'+str(level)+'/'
-    imgname = os.listdir(imgPath)
-    image_list=[]
-    imgname.sort()
-    for img in imgname:
-        print(img)
-        img = Image.open(os.path.join(imgPath,img))
-        img.load()
-        ima = np.asarray(img, dtype="int32")
-        #w, h , l =ima.shape
-        #print(w*h)
-        image_list.append(cp.asarray(rgb2gray(ima)))
-    return(image_list)
 
 # test code
 if __name__ == '__main__':
-    # make dir to save result images
-    save_path = 'results'
-    os.makedirs(save_path, exist_ok=True)
-
     # cuda version
     # load image from skimage.data and move from cpu to gpu
     image_list = []
-    image_list = cuda_load_rawimag()
+    image_list = cuda_load_rawimag('Easy')
     # init canny
     canny_cuda = CannyDetectorCuda()
     canny_cuda.load_image(image_list)
     canny_cuda.set_threshold_ratio(0.1, 0.2)
-    canny_cuda.run_canny_detector()
-    canny_cuda.run_canny_detector() # get second time data
-    cuda_results_list = canny_cuda.result_image_list_
-    for i, image in enumerate(cuda_results_list):
-        plt.imshow(image, cmap=plt.get_cmap('gray'))
-        plt.axis('off')
-        plt.title('Final image')
-        #plt.show()
-        final_image = image.astype(np.uint8)
-        im = Image.fromarray(np.uint8(final_image*255), 'L')
-        im.save(os.path.join(save_path, 'final_cuda_'+str(i)+'.png'))
-    
+    canny_cuda.run_canny_detector()  # warmup
+    canny_cuda.run_canny_detector()  # get second time data
     # serial version
-    image_list = serial_load_rawimag()
+    image_list = serial_load_rawimag('Easy')
     # init canny
     canny_serial = CannyDetectorSerial()
     canny_serial.load_image(image_list)
     canny_serial.set_threshold_ratio(0.1, 0.2)
     canny_serial.run_canny_detector()
-    serial_results_list = canny_serial.result_image_list_
-    for i, image in enumerate(serial_results_list):
-        plt.imshow(image, cmap=plt.get_cmap('gray'))
-        plt.axis('off')
-        plt.title('Final image')
-        #plt.show()
-        final_image = image.astype(np.uint8)
-        im = Image.fromarray(np.uint8(final_image*255), 'L')
-        im.save(os.path.join(save_path, 'final_serial_'+str(i)+'.png'))
-    
-    
-
-    # SpeedUp
-    '''
-    print('Avg Speed Up')
-    s_t1, s_t2, s_t3, s_t4 , s_t= canny_serial.get_time_result()
-    c_t1, c_t2, c_t3, c_t4 , c_t= canny_cuda.get_time_result()
-    print('avg t1: ', s_t1/c_t1)
-    print('avg t2: ', s_t2/c_t2)
-    print('avg t3: ', s_t3/c_t3)
-    print('avg t4: ', s_t4/c_t4)
-    print('avg t4: ', s_t/c_t)
-    '''
-
-    # Errors
-    '''
-    print('Errors')
-    for i in range(len(cuda_results_list)):
-        e = np.average(np.absolute(serial_results_list[i]-cuda_results_list[i]))
-        print('img',i,':',e)
-    '''
-    
-    # Data Transfer Time
-    '''
-    print('Data Transfer Time')
-    for i in range(len(canny_cuda.data_transfer)):
-       print('img',i,':',canny_cuda.data_transfer[i])
-       
-    print('Data Transfer Rate')
-    for i in range(len(canny_cuda.data_transfer)):
-       print('img',i,':',canny_cuda.data_transfer[i]/(canny_cuda.data_transfer[i]+canny_cuda.total_time[i]))
-    '''
     # 5 picture
     print('Cuda')
     print('t1')
@@ -524,7 +440,6 @@ if __name__ == '__main__':
     for j in range(5):
         print(canny_cuda.total_time[j+5])
     print('')
-
     print('Serial')
     print('t1')
     for j in canny_serial.t1:
@@ -542,4 +457,3 @@ if __name__ == '__main__':
     for j in canny_serial.total_time:
         print(j)
     print('')
-    

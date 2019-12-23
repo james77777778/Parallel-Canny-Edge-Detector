@@ -1,3 +1,10 @@
 # venv
 venv
 .vscode
+
+# result
+results
+
+# data
+*.png
+*.mp4
